@@ -78,7 +78,7 @@ If you find our work useful, please cite the following paper:
 ```bibtex
 @inproceedings{Sharp2025:arxiv,
   title      = {Sharp Monocular View Synthesis in Less Than a Second},
-  author     = {Lars Mescheder and Wei Dong and Shiwei Li and Xuyang Bai and Marcel Santos and Peiyun Hu and Bruno Lecouat and Mingmin Zhen and Ama\"{e}l Delaunoyand Tian Fang and Yanghai Tsin and Stephan R. Richter and Vladlen Koltun},
+  author     = {Lars Mescheder and Wei Dong and Shiwei Li and Xuyang Bai and Marcel Santos and Peiyun Hu and Bruno Lecouat and Mingmin Zhen and Ama\"{e}l Delaunoy and Tian Fang and Yanghai Tsin and Stephan R. Richter and Vladlen Koltun},
   journal    = {arXiv preprint arXiv:2512.10685},
   year       = {2025},
   url        = {https://arxiv.org/abs/2512.10685},

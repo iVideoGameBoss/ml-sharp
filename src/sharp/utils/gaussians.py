@@ -320,14 +320,17 @@ def load_ply(path: Path) -> tuple[Gaussians3D, SceneMetaData]:
     # Parse color space.
     color_space_index = supplement_data.get("color_space", 1)
     color_space = cs_utils.decode_color_space(color_space_index)
+    colors = torch.from_numpy(colors).view(1, -1, 3).float()
+
     if color_space == "sRGB":
-        colors = cs_utils.sRGB2linearRGB(colors)
+        # Convert to linearRGB for proper alpha blending.
+        colors = cs_utils.sRGB2linearRGB(colors.flatten(0, 1)).view(1, -1, 3)
+        color_space = "linearRGB"
 
     mean_vectors = torch.from_numpy(mean_vectors).view(1, -1, 3).float()
     quaternions = torch.from_numpy(quaternions).view(1, -1, 4).float()
     singular_values = torch.exp(torch.from_numpy(scale_logits).view(1, -1, 3)).float()
     opacities = torch.sigmoid(torch.from_numpy(opacity_logits).view(1, -1)).float()
-    colors = torch.from_numpy(colors).view(1, -1, 3).float()
 
     gaussians = Gaussians3D(
         mean_vectors=mean_vectors,
