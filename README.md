@@ -54,7 +54,7 @@ Fully compatible with XREAL (Air/Air 2/Pro/Ultra/One), VITURE (Pro XR/One/Luma),
 
 This is the original Uganda video. You can convert any video to 3D SBS
 
-[Opolotivation – Uganda Walking Tour YouTube Channel](https://www.youtube.com/@opolotivation)
+[Opolotivation – KAMPALA CITY - Everyone is Back Already 🌍🇺🇬UGANDA](https://youtu.be/bedRgQY7fpw?si=iEBcHTHhvjGlJK4-)
 
 ### How It Works: True Spatial Reconstruction
 Unlike basic "2D-to-3D" converters that just shift pixels, `ml-sharp` uses Apple's cutting-edge SHARP architecture to perform a **full 3D reconstruction** of every single frame in your video:
