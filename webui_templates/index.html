@@ -784,7 +784,7 @@
                 // Set Mode: SBS Movie vs PLY Sequence
                 if (sbsToggle.checked) {
                     formData.append('output_mode', 'sbs_movie');
-                    showStatus('Starting SBS 3D Movie generation (Frames + Rendering)...', 'info');
+                    showStatus('Starting SBS 3D Movie generation (Frames + Rendering)...(Stop at anytime to output movie)', 'info');
                 } else {
                     formData.append('output_mode', 'ply_seq');
                     showStatus('Initializing video generation...', 'info');
@@ -863,22 +863,39 @@
                             if (isSBS) {
                                 // For SBS, we have a single MP4 file
                                 const finalFile = data.files[data.files.length - 1];
-                                showStatus("SBS Movie Generated Successfully!", 'success');
-                                downloadBtn.href = `/download/${finalFile}`;
+                                showStatus("SBS Movie Generated Successfully! It is saved in the 'output' folder. It takes time to process all png's.", 'success');
+                                
+                                // --- NEW BUTTON LOGIC ---
+                                downloadBtn.removeAttribute('href'); // Disable direct download link
+                                downloadBtn.style.cursor = "pointer";
+                                
+                                // When clicked, tell server to open the folder window
+                                downloadBtn.onclick = async (e) => {
+                                    e.preventDefault();
+                                    try {
+                                        await fetch('/open_output_folder', { method: 'POST' });
+                                    } catch (err) {
+                                        console.error("Failed to open folder", err);
+                                        showStatus("Could not open folder automatically.", "error");
+                                    }
+                                };
+
+                                // Update Button Text/Icon to "Open Output Folder"
                                 downloadBtn.innerHTML = `
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                </svg> Download SBS Movie (MP4)`;
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z" />
+                                </svg> Open Output Folder`;
+                                
                                 downloadSection.classList.add('visible');
                                 
-                                // Reset UI
+                                // Reset UI elements
                                 document.querySelector('.mode-tabs').style.display = 'none';
                                 createView.style.display = 'none';
                                 resetAppBtn.style.display = 'flex';
                                 
                             } else {
                                 const msg = data.status === 'stopped' ? 'Processing Stopped.' : 'Processing Complete!';
-                                showStatus(`${msg} Files saved to output folder. Use "Load Existing" to view specific frames.`, 'success');
+                        showStatus(`${msg} Files saved to output folder. Use "Load Existing" to view specific frames.`, 'success');
                             }
                         }
                     }

@@ -855,7 +855,25 @@ def status():
         "cuda_available": torch.cuda.is_available(),
     })
 
-
+@app.route("/open_output_folder", methods=["POST"])
+def open_output_folder():
+    """Opens the 'output' directory in the system file explorer."""
+    try:
+        # Get the absolute path to the 'output' folder in the app root
+        path = str(OUTPUT_DIR.absolute())
+        
+        if os.name == 'nt':  # Windows
+            os.startfile(path)
+        elif sys.platform == 'darwin':  # macOS
+            subprocess.Popen(['open', path])
+        else:  # Linux
+            subprocess.Popen(['xdg-open', path])
+            
+        return jsonify({"success": True})
+    except Exception as e:
+        LOGGER.error(f"Failed to open folder: {e}")
+        return jsonify({"error": str(e)}), 500
+    
 if __name__ == "__main__":
     import argparse
 
@@ -873,3 +891,5 @@ if __name__ == "__main__":
 
     LOGGER.info(f"Starting WebUI at http://{args.host}:{args.port}")
     app.run(host=args.host, port=args.port, debug=args.debug)
+
+
