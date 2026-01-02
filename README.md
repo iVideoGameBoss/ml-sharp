@@ -37,6 +37,35 @@ Amazing tech from Apple works with any image. You can even use OBS as a virtual 
 
 ![sbs-3d](webui_static/sbs-3d.png)
 
+## (PC ONLY) Transform Any 2D Video into a Cinematic 3D SBS Movie
+
+**Unlock the full potential of your AR/VR hardware.** 
+Don't just watch your movies—step inside them. With the new **SBS Movie Maker**, `ml-sharp` can ingest any standard 2D video file and reconstruct it into a stunning, depth-accurate Side-by-Side (SBS) 3D experience.
+
+**Supported Hardware:**
+Fully compatible with XREAL (Air/Air 2/Pro/Ultra/One), VITURE (Pro XR/One/Luma), Rokid (Max/Pro), RayNeo (Air 2/3S), Apple Vision Pro, Meta Quest, and any display that supports standard Side-by-Side content.
+
+![sbs-3d](webui_static/sbs-3d-movie.png)
+
+### How It Works: True Spatial Reconstruction
+Unlike basic "2D-to-3D" converters that just shift pixels, `ml-sharp` uses Apple's cutting-edge SHARP architecture to perform a **full 3D reconstruction** of every single frame in your video:
+
+1.  **AI Analysis:** The engine analyzes the footage frame-by-frame to understand geometry and depth.
+2.  **Gaussian Splatting:** Each frame is converted into a metric 3D Gaussian Splat scene.
+3.  **Stereoscopic Rendering:** Using a virtual dual-camera rig, we render two distinct perspectives (Left Eye and Right Eye) with mathematically correct parallax.
+4.  **High-Fidelity Mastering:** The frames are stitched together and the original audio is remastered into the final container.
+
+### Crystal Clear Resolution
+We refuse to compromise on quality. Your output file is generated at a massive **3840x1080** resolution.
+*   **Left Eye:** 1920x1080 (Full HD)
+*   **Right Eye:** 1920x1080 (Full HD)
+
+### Why It Always Works
+The result is a standard `.mp4` file encoded in the industry-standard Side-by-Side (SBS) format. Because we bake the 3D effect directly into the video file, **it just works**.
+*   **No special players required:** Play it in VLC, Windows Media Player, or directly inside your AR Glasses' native media player.
+*   **Universal Compatibility:** If your device supports 3D SBS mode, this movie will play perfectly with full depth and immersion.
+
+
 ## Support
 If you find this app useful, consider buying me a coffee!
 
@@ -126,13 +155,27 @@ Now run this commend, Apple’s ml-sharp needs pip install -e . because it’s d
 pip install -e .
 ```
 
-Now add torch torchvision torchaudio 
+Now Install CUDA-Enabled PyTorch & GSplat (CRITICAL STEP)
+We must install specific versions (PyTorch 2.4.0 + CUDA 12.1) to support the 3D renderer on Windows without Visual Studio.
 
 ```
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+pip uninstall -y torch torchvision torchaudio gsplat
+
+pip install torch==2.4.0+cu121 torchvision==0.19.0+cu121 torchaudio==2.4.0+cu121 --index-url https://download.pytorch.org/whl/cu121
+
+pip install gsplat --index-url https://docs.gsplat.studio/whl/pt24cu121
+
+```
+
+Now Fix NumPy Version. Prevent crashes with newer NumPy versions.
+
+```
+pip install "numpy<2"
 ```
 
 Now double click the bat file. For me it is in D:\ml-sharp\ cause thats where I cloned it.
+
+This script is now configured to run in Isolated Mode, ensuring it uses the correct libraries we just installed and ignores any conflicting packages elsewhere on your system.
 
 "D:\ml-sharp\run_webui.bat"
 
