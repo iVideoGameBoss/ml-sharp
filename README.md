@@ -42,10 +42,19 @@ Amazing tech from Apple works with any image. You can even use OBS as a virtual 
 **Unlock the full potential of your AR/VR hardware.** 
 Don't just watch your movies—step inside them. With the new **SBS Movie Maker**, `ml-sharp` can ingest any standard 2D video file and reconstruct it into a stunning, depth-accurate Side-by-Side (SBS) 3D experience.
 
+![sbs-3d](webui_static/sbs-3d-movie.png)
+
+### Watch This Uganda Walking 3D SBS Video Made with ML-Sharp. Use Your XREAL, VITURE , Rokid, RayNeo, Oculus, Meta Quest Glasses
+
 **Supported Hardware:**
 Fully compatible with XREAL (Air/Air 2/Pro/Ultra/One), VITURE (Pro XR/One/Luma), Rokid (Max/Pro), RayNeo (Air 2/3S), Apple Vision Pro, Meta Quest, and any display that supports standard Side-by-Side content.
 
-![sbs-3d](webui_static/sbs-3d-movie.png)
+[![ml-sharp-3d-sbs-video](https://i.ytimg.com/vi/WStBISqtCDo/maxresdefault.jpg)](https://youtu.be/WStBISqtCDo?si=C4t7jL6CJ9JvdgX0)
+### click image to watch video [ml-sharp](https://youtu.be/aZaGBWggVPc?si=C4t7jL6CJ9JvdgX0)
+
+This is the original Uganda video. You can convert any video to 3D SBS
+
+[Opolotivation – Uganda Walking Tour YouTube Channel](https://www.youtube.com/@opolotivation)
 
 ### How It Works: True Spatial Reconstruction
 Unlike basic "2D-to-3D" converters that just shift pixels, `ml-sharp` uses Apple's cutting-edge SHARP architecture to perform a **full 3D reconstruction** of every single frame in your video:
