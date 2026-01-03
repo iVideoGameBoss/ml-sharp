@@ -62,6 +62,13 @@ Unlike basic "2D-to-3D" converters that just shift pixels, `ml-sharp` uses Apple
 3.  **Stereoscopic Rendering:** Using a virtual dual-camera rig, we render two distinct perspectives (Left Eye and Right Eye) with mathematically correct parallax.
 4.  **High-Fidelity Mastering:** The frames are stitched together and the original audio is remastered into the final container.
 
+### click image to watch video [ml-sharp](https://youtu.be/BLDu1ylXA0E?si=C4t7jL6CJ9JvdgX0)
+[![ml-sharp-3d-sbs-video](https://i.ytimg.com/vi/BLDu1ylXA0E/maxresdefault.jpg)](https://youtu.be/BLDu1ylXA0E?si=C4t7jL6CJ9JvdgX0)
+
+Here is the original Makkah video. You can convert any video to 3D SBS
+
+[Immersive Makkah Walking Tour as a Muslim](https://youtu.be/HQzbjtUKjeA?si=p6OCNx6VNlQ9nYHc)
+
 ### Crystal Clear Resolution
 We refuse to compromise on quality. Your output file is generated at a massive **3840x1080** resolution.
 *   **Left Eye:** 1920x1080 (Full HD)
