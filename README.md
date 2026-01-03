@@ -117,6 +117,13 @@ We present SHARP, an approach to photorealistic view synthesis from a single ima
 [Opolotivation – Uganda Walking Tour YouTube Channel](https://www.youtube.com/@opolotivation)
 
 
+### click image to watch video [ml-sharp](https://youtu.be/9bUL3aDOans?si=C4t7jL6CJ9JvdgX0)
+[![ml-sharp-3d-sbs-video](https://i.ytimg.com/vi/9bUL3aDOans/maxresdefault.jpg)](https://youtu.be/9bUL3aDOans?si=C4t7jL6CJ9JvdgX0)
+
+Here is the original Uganda video. You can convert any video to 3D SBS
+
+[INCREDIBLE Lebanese Wedding Entry!!](https://youtu.be/xLsEln180II?si=eOBOWxN2hQzuZsz2)
+
 ## Getting started on MAC or PC
 
 Installing ml-sharp is very easy and runs on any pc or mac. It can also run without GPU but works faster if you have it. We recommend to first create a python environment. For PC you must use python 3.10 on Mac it works fine with python 3.13
