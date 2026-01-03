@@ -44,7 +44,8 @@ Don't just watch your movies—step inside them. With the new **SBS Movie Maker*
 
 ### Watch This Uganda Walking 3D SBS Video Made with ML-Sharp. Use Your XREAL, VITURE , Rokid, RayNeo, Oculus, Meta Quest Glasses
 
-### click image to watch video [ml-sharp](https://youtu.be/uDN3OGLSwv0?si=C4t7jL6CJ9JvdgX0)
+### click image to watch video [ml-sharp Uganda](https://youtu.be/uDN3OGLSwv0?si=C4t7jL6CJ9JvdgX0)
+
 [![ml-sharp-3d-sbs-video](https://i.ytimg.com/vi/uDN3OGLSwv0/maxresdefault.jpg)](https://youtu.be/uDN3OGLSwv0?si=C4t7jL6CJ9JvdgX0)
 
 Here is the original Uganda video. You can convert any video to 3D SBS
@@ -62,7 +63,10 @@ Unlike basic "2D-to-3D" converters that just shift pixels, `ml-sharp` uses Apple
 3.  **Stereoscopic Rendering:** Using a virtual dual-camera rig, we render two distinct perspectives (Left Eye and Right Eye) with mathematically correct parallax.
 4.  **High-Fidelity Mastering:** The frames are stitched together and the original audio is remastered into the final container.
 
-### click image to watch video [ml-sharp](https://youtu.be/BLDu1ylXA0E?si=C4t7jL6CJ9JvdgX0)
+### Watch This Makkah Walking 3D SBS Video Made with ML-Sharp. Use Your XREAL, VITURE , Rokid, RayNeo, Oculus, Meta Quest Glasses
+
+### click image to watch video [ml-sharp Makkah](https://youtu.be/BLDu1ylXA0E?si=C4t7jL6CJ9JvdgX0)
+
 [![ml-sharp-3d-sbs-video](https://i.ytimg.com/vi/BLDu1ylXA0E/maxresdefault.jpg)](https://youtu.be/BLDu1ylXA0E?si=C4t7jL6CJ9JvdgX0)
 
 Here is the original Makkah video. You can convert any video to 3D SBS
@@ -79,7 +83,10 @@ The result is a standard `.mp4` file encoded in the industry-standard Side-by-Si
 *   **No special players required:** Play it in VLC, Windows Media Player, or directly inside your AR Glasses' native media player.
 *   **Universal Compatibility:** If your device supports 3D SBS mode, this movie will play perfectly with full depth and immersion.
 
-### click image to watch video [ml-sharp](https://youtu.be/egaik88v2WY?si=C4t7jL6CJ9JvdgX0)
+### Watch This Navotas Walking 3D SBS Video Made with ML-Sharp. Use Your XREAL, VITURE , Rokid, RayNeo, Oculus, Meta Quest Glasses
+
+### click image to watch video [ml-sharp Navotas](https://youtu.be/egaik88v2WY?si=C4t7jL6CJ9JvdgX0)
+
 [![ml-sharp-3d-sbs-video](https://i.ytimg.com/vi/egaik88v2WY/maxresdefault.jpg)](https://youtu.be/egaik88v2WY?si=C4t7jL6CJ9JvdgX0)
 
 Here is the original WALKING NAVOTAS video. You can convert any video to 3D SBS
@@ -116,11 +123,13 @@ We present SHARP, an approach to photorealistic view synthesis from a single ima
 
 [Opolotivation – Uganda Walking Tour YouTube Channel](https://www.youtube.com/@opolotivation)
 
+### Watch This Wedding 3D SBS Video Made with ML-Sharp. Use Your XREAL, VITURE , Rokid, RayNeo, Oculus, Meta Quest Glasses
 
-### click image to watch video [ml-sharp](https://youtu.be/9bUL3aDOans?si=C4t7jL6CJ9JvdgX0)
+### click image to watch video [ml-sharp Wedding](https://youtu.be/9bUL3aDOans?si=C4t7jL6CJ9JvdgX0)
+
 [![ml-sharp-3d-sbs-video](https://i.ytimg.com/vi/9bUL3aDOans/maxresdefault.jpg)](https://youtu.be/9bUL3aDOans?si=C4t7jL6CJ9JvdgX0)
 
-Here is the original Uganda video. You can convert any video to 3D SBS
+Here is the original Wedding video. You can convert any video to 3D SBS
 
 [INCREDIBLE Lebanese Wedding Entry!!](https://youtu.be/xLsEln180II?si=eOBOWxN2hQzuZsz2)
 
