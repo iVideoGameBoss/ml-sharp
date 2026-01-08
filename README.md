@@ -123,15 +123,15 @@ We present SHARP, an approach to photorealistic view synthesis from a single ima
 
 [Opolotivation – Uganda Walking Tour YouTube Channel](https://www.youtube.com/@opolotivation)
 
-### Watch This Wedding 3D SBS Video Made with ML-Sharp. Use Your XREAL, VITURE , Rokid, RayNeo, Oculus, Meta Quest Glasses
+### Watch This KARABA 3D SBS Video Made with ML-Sharp. Use Your XREAL, VITURE , Rokid, RayNeo, Oculus, Meta Quest Glasses
 
-### click image to watch video [ml-sharp Wedding](https://youtu.be/9bUL3aDOans?si=C4t7jL6CJ9JvdgX0)
+### click image to watch video [ml-sharp KARABA](https://youtu.be/mdXOHOomcls?si=C4t7jL6CJ9JvdgX0)
 
-[![ml-sharp-3d-sbs-video](https://i.ytimg.com/vi/9bUL3aDOans/maxresdefault.jpg)](https://youtu.be/9bUL3aDOans?si=C4t7jL6CJ9JvdgX0)
+[![ml-sharp](https://i.ytimg.com/vi/mdXOHOomcls/maxresdefault.jpg)](https://youtu.be/mdXOHOomcls?si=C4t7jL6CJ9JvdgX0)
 
-Here is the original Wedding video. You can convert any video to 3D SBS
+Here is the original KARABA video. You can convert any video to 3D SBS
 
-[INCREDIBLE Lebanese Wedding Entry!!](https://youtu.be/xLsEln180II?si=eOBOWxN2hQzuZsz2)
+[KARABA](https://youtu.be/0JV1Dswpev0?si=eOBOWxN2hQzuZsz2)
 
 ## Getting started on MAC or PC
 
@@ -329,20 +329,6 @@ Wait until you see to open your browser to:
 ```
 Http://localhost:7860
 ```
-
-# More Video Demos by iVideoGameBoss on YouTube
-
-## Click Image or Link to Watch KARABA
-
-[![ml-sharp](https://i.ytimg.com/vi/mdXOHOomcls/maxresdefault.jpg)](https://youtu.be/mdXOHOomcls?si=C4t7jL6CJ9JvdgX0)
-
-### click image to watch video [ml-sharp KARABA](https://youtu.be/mdXOHOomcls?si=C4t7jL6CJ9JvdgX0)
-
-Here is the original KARABA video. You can convert any video to 3D SBS
-
-[KARABA](https://youtu.be/0JV1Dswpev0?si=eOBOWxN2hQzuZsz2)
-
-
 
 ## Using the CLI
 
