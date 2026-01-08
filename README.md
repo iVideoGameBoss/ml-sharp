@@ -330,6 +330,20 @@ Wait until you see to open your browser to:
 Http://localhost:7860
 ```
 
+# More Video Demos by iVideoGameBoss on YouTube
+
+## Click Image or Link to Watch KARABA
+
+[![ml-sharp](https://i.ytimg.com/vi/mdXOHOomcls/maxresdefault.jpg)](https://youtu.be/mdXOHOomcls?si=C4t7jL6CJ9JvdgX0)
+
+### click image to watch video [ml-sharp KARABA](https://youtu.be/mdXOHOomcls?si=C4t7jL6CJ9JvdgX0)
+
+Here is the original KARABA video. You can convert any video to 3D SBS
+
+[KARABA](https://youtu.be/0JV1Dswpev0?si=eOBOWxN2hQzuZsz2)
+
+
+
 ## Using the CLI
 
 To run prediction:
