@@ -372,7 +372,7 @@ def _process_video_job(job_id, tmp_path, original_stem, unique_id, predictor, de
                 pass
 
 
-def _process_sbs_video_job(job_id, tmp_path, original_stem, unique_id, predictor, device, fps, use_fp16):
+def _process_sbs_video_job(job_id, tmp_path, original_stem, unique_id, predictor, device, fps, use_fp16, opacity_threshold, stereo_offset, brightness_factor):
     """Background worker for SBS 3D Movie generation (Audio extraction -> Render -> Stitch -> Video)."""
     
     # Verify CUDA for rendering
@@ -380,6 +380,8 @@ def _process_sbs_video_job(job_id, tmp_path, original_stem, unique_id, predictor
         _active_jobs[job_id]['status'] = 'error'
         _active_jobs[job_id]['error_msg'] = "SBS Rendering requires a CUDA GPU. CPU/MPS not supported for server-side rendering."
         return
+    
+    LOGGER.info(f"Job {job_id} Config | Opacity Threshold: {opacity_threshold} | Stereo Offset: {stereo_offset} | Brightness: {brightness_factor}")
 
     work_dir = OUTPUT_DIR / f"work_{unique_id}"
     work_dir.mkdir(exist_ok=True)
@@ -435,14 +437,6 @@ def _process_sbs_video_job(job_id, tmp_path, original_stem, unique_id, predictor
                 )
             raise e
         
-        # Stereo Setup
-        # Base IPD offset approx 0.06 units total. 
-        # Left eye: -0.03, Right eye: +0.03
-        stereo_offset = 0.03 
-        
-        # Brightness Boost Factor (Simulates bright light / exposure)
-        brightness_factor = 1.2
-
         # 3. Frame Loop
         png_files = []
         
@@ -459,6 +453,20 @@ def _process_sbs_video_job(job_id, tmp_path, original_stem, unique_id, predictor
                 h, w = frame.shape[:2]
                 f_px = io.convert_focallength(w, h, 30.0)
                 gaussians = predict_image(predictor, frame, f_px, device, use_fp16=use_fp16)
+
+                # --- HALO REMOVAL LOGIC ---
+                if opacity_threshold > 0.0:
+                    # Filter out weak, semi-transparent splats that cause "ghosting" around hair/edges
+                    mask = gaussians.opacities[0] > opacity_threshold
+                    
+                    gaussians = Gaussians3D(
+                        mean_vectors=gaussians.mean_vectors[:, mask],
+                        singular_values=gaussians.singular_values[:, mask],
+                        quaternions=gaussians.quaternions[:, mask],
+                        colors=gaussians.colors[:, mask],
+                        opacities=gaussians.opacities[:, mask]
+                    )
+                # -------------------------
 
                 # -- Rendering Logic --
                 
@@ -631,6 +639,11 @@ def generate_video():
     # Get Mode: 'ply_seq' (default) or 'sbs_movie'
     output_mode = request.form.get('output_mode', 'ply_seq')
     
+    # Get New Settings (Defaults applied if missing)
+    opacity_threshold = float(request.form.get('opacity_threshold', 0.0))
+    stereo_offset = float(request.form.get('stereo_offset', 0.03))
+    brightness_factor = float(request.form.get('brightness_factor', 1.0))
+
     LOGGER.info(f"Starting video generation | Quality: {quality} | Mode: {output_mode}")
 
     allowed_extensions = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
@@ -674,15 +687,16 @@ def generate_video():
         
         # Select worker based on mode
         if output_mode == 'sbs_movie':
-            target_func = _process_sbs_video_job
+            thread = threading.Thread(
+                target=_process_sbs_video_job,
+                args=(job_id, tmp_path, original_stem, unique_id, predictor, device, fps, use_fp16, opacity_threshold, stereo_offset, brightness_factor)
+            )
         else:
-            target_func = _process_video_job
+            thread = threading.Thread(
+                target=_process_video_job,
+                args=(job_id, tmp_path, original_stem, unique_id, predictor, device, fps, use_fp16)
+            )
 
-        # Start thread
-        thread = threading.Thread(
-            target=target_func,
-            args=(job_id, tmp_path, original_stem, unique_id, predictor, device, fps, use_fp16)
-        )
         thread.start()
 
         return jsonify({
@@ -891,5 +905,3 @@ if __name__ == "__main__":
 
     LOGGER.info(f"Starting WebUI at http://{args.host}:{args.port}")
     app.run(host=args.host, port=args.port, debug=args.debug)
-
-

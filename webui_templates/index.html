@@ -303,6 +303,52 @@
                                 <input type="checkbox" id="sbs-toggle">
                                 <label for="sbs-toggle" style="cursor:pointer; color: #00d4ff;">Generate SBS 3D Movie (Requires CUDA)</label>
                             </div>
+                            
+                            <!-- New Settings Container -->
+                            <div id="sbs-settings" style="display:none; padding-left: 20px; border-left: 2px solid #00d4ff; margin-top: 10px;">
+                                
+                                <!-- Opacity Threshold -->
+                                <div class="input-group" style="margin-bottom: 8px;">
+                                    <label>Halo Removal (Opacity Cutoff):</label>
+                                    <select id="sbs-opacity" class="quality-select">
+                                        <option value="0.0" selected>None (Full Detail)</option>
+                                        <option value="0.05">Low (0.05)</option>
+                                        <option value="0.1">Medium (0.1)</option>
+                                        <option value="0.2">High (0.2)</option>
+                                        <option value="0.3">Aggressive (0.3)</option>
+                                        <option value="0.4">Aggressive (0.4)</option>
+                                        <option value="0.5">Aggressive (0.5)</option>
+                                        <option value="0.6">Aggressive (0.6)</option>
+                                    </select>
+                                    <small class="hint">Removes ghostly edges. Higher values fix halos but may thin out hair.</small>
+                                </div>
+
+                                <!-- Stereo Offset -->
+                                <div class="input-group" style="margin-bottom: 8px;">
+                                    <label>3D Depth Intensity (Stereo Offset):</label>
+                                    <select id="sbs-offset" class="quality-select">
+                                        <option value="0.005">Very Subtle (0.005)</option>
+                                        <option value="0.015">Moderate (0.015)</option>
+                                        <option value="0.03" selected>Standard (0.03) - Recommended</option>
+                                        <option value="0.06">Strong (0.06)</option>
+                                        <option value="0.1">Extreme (0.10)</option>
+                                    </select>
+                                    <small class="hint">Distance between eyes. Higher values increase depth but may cause eye strain.</small>
+                                </div>
+
+                                <!-- Brightness -->
+                                <div class="input-group" style="margin-bottom: 8px;">
+                                    <label>Brightness Boost:</label>
+                                    <select id="sbs-brightness" class="quality-select">
+                                        <option value="1.0" selected>Original (1.0)</option>
+                                        <option value="1.05">Slight Boost (1.05)</option>
+                                        <option value="1.2">Bright (1.2)</option>
+                                        <option value="1.5">Very Bright (1.5)</option>
+                                    </select>
+                                    <small class="hint">Increases output brightness. Lower values reduce artifact glow.</small>
+                                </div>
+                            </div>
+
                             <small class="hint" style="display:block; margin-top:5px; color:#888;">
                                 Creates a 3840x1080 SBS video with audio. Slow processing.
                             </small>
@@ -530,6 +576,10 @@
         // Video Options
         const videoOptions = document.getElementById('video-options');
         const sbsToggle = document.getElementById('sbs-toggle');
+        const sbsSettings = document.getElementById('sbs-settings');
+        const sbsOpacity = document.getElementById('sbs-opacity');
+        const sbsOffset = document.getElementById('sbs-offset');
+        const sbsBrightness = document.getElementById('sbs-brightness');
 
         // Webcam Elements
         const webcamFeed = document.getElementById('webcam-feed');
@@ -544,6 +594,10 @@
         init();
 
         async function init() {
+            // FORCE UNCHECK ON LOAD
+            if(sbsToggle) sbsToggle.checked = false;
+            if(sbsSettings) sbsSettings.style.display = 'none';
+
             setupEventListeners();
             setupResizeObserver();
             await checkServerStatus();
@@ -584,6 +638,15 @@
             // Webcam
             startCameraBtn.addEventListener('click', startWebcam);
             captureBtn.addEventListener('click', captureAndGenerate);
+
+            // SBS Settings Toggle
+            sbsToggle.addEventListener('change', function() {
+                if(this.checked) {
+                    sbsSettings.style.display = 'block';
+                } else {
+                    sbsSettings.style.display = 'none';
+                }
+            });
         }
 
          function toggleSBS() {
@@ -784,6 +847,9 @@
                 // Set Mode: SBS Movie vs PLY Sequence
                 if (sbsToggle.checked) {
                     formData.append('output_mode', 'sbs_movie');
+                    formData.append('opacity_threshold', sbsOpacity.value);
+                    formData.append('stereo_offset', sbsOffset.value);
+                    formData.append('brightness_factor', sbsBrightness.value);
                     showStatus('Starting SBS 3D Movie generation (Frames + Rendering)...(Stop at anytime to output movie)', 'info');
                 } else {
                     formData.append('output_mode', 'ply_seq');
