@@ -179,6 +179,24 @@ def get_predictor() -> tuple[RGBGaussianPredictor, torch.device]:
     return _model_cache["predictor"], _model_cache["device"]
 
 
+def get_next_job_prefix() -> str:
+    """Scan output dir and return the next available 3-digit prefix (e.g. '005_')."""
+    try:
+        max_idx = 0
+        for item in OUTPUT_DIR.iterdir():
+            if item.name[:3].isdigit() and item.name[3] == '_':
+                try:
+                    idx = int(item.name[:3])
+                    if idx > max_idx:
+                        max_idx = idx
+                except ValueError:
+                    continue
+        return f"{max_idx + 1:03d}"
+    except Exception as e:
+        LOGGER.error(f"Error calculating job prefix: {e}")
+        return "000"
+
+
 @torch.no_grad()
 def predict_image(
     predictor: RGBGaussianPredictor,
@@ -187,26 +205,52 @@ def predict_image(
     device: torch.device,
     use_fp16: bool = False
 ) -> Gaussians3D:
-    """Predict Gaussians from an image."""
+    """Predict Gaussians from a single image."""
+    # Wrap single image in list and use batch predictor
+    return predict_batch(predictor, [image], f_px, device, use_fp16)[0]
+
+
+@torch.no_grad()
+def predict_batch(
+    predictor: RGBGaussianPredictor,
+    images: list[np.ndarray],
+    f_px: float,
+    device: torch.device,
+    use_fp16: bool = False
+) -> list[Gaussians3D]:
+    """Predict Gaussians from a batch of images."""
+    if not images:
+        return []
+
     internal_shape = (1536, 1536)
+    
+    # Prepare batch tensors
+    # Stack numpy arrays: (B, H, W, C) -> permute to (B, C, H, W)
+    batch_np = np.stack(images)
+    batch_pt = torch.from_numpy(batch_np).float().to(device).permute(0, 3, 1, 2) / 255.0
+    
+    batch_size, _, height, width = batch_pt.shape
+    
+    # Disparity factor: (B,)
+    disparity_val = f_px / width
+    disparity_factor = torch.full((batch_size,), disparity_val, device=device, dtype=torch.float32)
 
-    image_pt = torch.from_numpy(image.copy()).float().to(device).permute(2, 0, 1) / 255.0
-    _, height, width = image_pt.shape
-    disparity_factor = torch.tensor([f_px / width]).float().to(device)
-
-    image_resized_pt = F.interpolate(
-        image_pt[None],
+    # Resize batch
+    batch_resized_pt = F.interpolate(
+        batch_pt,
         size=(internal_shape[1], internal_shape[0]),
         mode="bilinear",
         align_corners=True,
     )
 
+    # Inference
     if use_fp16 and device.type == "cuda":
         with torch.amp.autocast("cuda", dtype=torch.float16):
-            gaussians_ndc = predictor(image_resized_pt, disparity_factor)
+            gaussians_ndc = predictor(batch_resized_pt, disparity_factor)
     else:
-        gaussians_ndc = predictor(image_resized_pt, disparity_factor)
+        gaussians_ndc = predictor(batch_resized_pt, disparity_factor)
 
+    # Post-processing intrinsics
     intrinsics = (
         torch.tensor(
             [
@@ -223,11 +267,23 @@ def predict_image(
     intrinsics_resized[0] *= internal_shape[0] / width
     intrinsics_resized[1] *= internal_shape[1] / height
 
-    gaussians = unproject_gaussians(
+    # Unproject whole batch
+    gaussians_batch = unproject_gaussians(
         gaussians_ndc, torch.eye(4).to(device), intrinsics_resized, internal_shape
     )
 
-    return gaussians
+    # Split batched Gaussians3D into list of individual Gaussians3D
+    results = []
+    for i in range(batch_size):
+        results.append(Gaussians3D(
+            mean_vectors=gaussians_batch.mean_vectors[i:i+1],
+            singular_values=gaussians_batch.singular_values[i:i+1],
+            quaternions=gaussians_batch.quaternions[i:i+1],
+            colors=gaussians_batch.colors[i:i+1],
+            opacities=gaussians_batch.opacities[i:i+1]
+        ))
+        
+    return results
 
 
 @app.route("/")
@@ -295,7 +351,7 @@ def generate():
         return jsonify({"error": str(e)}), 500
 
 
-def _process_video_job(job_id, tmp_path, original_stem, unique_id, predictor, device, fps, use_fp16):
+def _process_video_job(job_id, tmp_path, original_stem, unique_id, predictor, device, fps, use_fp16, batch_size):
     """Background worker to process video frames into PLY sequence."""
     reader = None
     try:
@@ -310,47 +366,108 @@ def _process_video_job(job_id, tmp_path, original_stem, unique_id, predictor, de
 
         reader = iio.get_reader(tmp_path)
         
-        for i, frame in enumerate(reader):
+        # Determine Folder Name
+        job_prefix = get_next_job_prefix()
+        # Folder for PLYs: output/001_video_name_plys/
+        work_dir = OUTPUT_DIR / f"{job_prefix}_{original_stem}_plys"
+        work_dir.mkdir(exist_ok=True)
+        
+        LOGGER.info(f"Job {job_id} [{job_prefix}] | Batch: {batch_size} | Folder: {work_dir}")
+
+        # Batch accumulation
+        current_batch_frames = []
+        current_batch_indices = []
+        
+        frames_iterator = enumerate(reader)
+        
+        # Helper to process what's in buffer
+        def process_batch(frames, indices):
+            try:
+                # Preprocess: just ensure 3 channels
+                processed_frames = []
+                for f in frames:
+                    if f.shape[2] > 3:
+                        processed_frames.append(f[:, :, :3])
+                    else:
+                        processed_frames.append(f)
+                
+                # Assume all frames in video are same size
+                h, w = processed_frames[0].shape[:2]
+                f_px = io.convert_focallength(w, h, 30.0)
+                
+                # Predict
+                gaussians_list = predict_batch(predictor, processed_frames, f_px, device, use_fp16=use_fp16)
+                
+                # Save Individual PLYs
+                for k, g in enumerate(gaussians_list):
+                    frame_idx = indices[k]
+                    frame_filename = f"{original_stem}_{unique_id}_f{frame_idx:04d}.ply"
+                    
+                    # Save to subfolder
+                    output_path = work_dir / frame_filename
+                    save_ply(g, f_px, (h, w), output_path)
+                    
+                    # Append file path relative to OUTPUT_DIR so webui works
+                    # ex: "001_myvideo_plys/myvideo_uuid_f0001.ply"
+                    relative_path = f"{work_dir.name}/{frame_filename}"
+                    
+                    _active_jobs[job_id]['files'].append(relative_path)
+                    _active_jobs[job_id]['processed_frames'] = frame_idx + 1
+                    
+                    # Cleanup
+                    del g
+
+                # Clear cache periodically
+                if device.type == 'cuda':
+                    torch.cuda.empty_cache()
+                elif device.type == 'mps':
+                    try:
+                        torch.mps.empty_cache() 
+                    except Exception: 
+                        pass
+                gc.collect()
+                
+            except RuntimeError as e:
+                # OOM Fallback logic
+                if "out of memory" in str(e).lower() and len(frames) > 1:
+                    LOGGER.warning(f"OOM detected with batch size {len(frames)}. Switching to batch size 1.")
+                    torch.cuda.empty_cache()
+                    # Recursive retry one by one
+                    for idx, single_frame in enumerate(frames):
+                        process_batch([single_frame], [indices[idx]])
+                    return True # Signal that OOM happened
+                else:
+                    raise e
+            return False # No OOM
+
+        # Main Loop
+        fallback_mode = False
+        
+        for i, frame in frames_iterator:
             if _active_jobs[job_id]['stop_signal']:
                 LOGGER.info(f"Job {job_id} stopped by user.")
                 _active_jobs[job_id]['status'] = 'stopped'
                 break
 
-            try:
-                if frame.shape[2] > 3:
-                    frame = frame[:, :, :3]
-                
-                h, w = frame.shape[:2]
-                f_px = io.convert_focallength(w, h, 30.0)
-
-                gaussians = predict_image(predictor, frame, f_px, device, use_fp16=use_fp16)
-
-                frame_filename = f"{original_stem}_{unique_id}_f{i:04d}.ply"
-                output_path = OUTPUT_DIR / frame_filename
-                save_ply(gaussians, f_px, (h, w), output_path)
-                
-                del gaussians
-                
-                if i % 2 == 0:
-                    if device.type == 'cuda':
-                        torch.cuda.empty_cache()
-                    elif device.type == 'mps':
-                        try:
-                            torch.mps.empty_cache()
-                            torch.mps.synchronize() 
-                        except Exception:
-                            pass
-                    gc.collect()
-                    
-            except Exception as e:
-                LOGGER.error(f"Error processing frame {i}: {e}")
-                continue 
-
-            _active_jobs[job_id]['files'].append(frame_filename)
-            _active_jobs[job_id]['processed_frames'] = i + 1
+            current_batch_frames.append(frame)
+            current_batch_indices.append(i)
             
-            if i % 10 == 0 or i == total_frames - 1:
+            # If batch full or force fallback
+            effective_bs = 1 if fallback_mode else batch_size
+            
+            if len(current_batch_frames) >= effective_bs:
+                oom_occurred = process_batch(current_batch_frames, current_batch_indices)
+                if oom_occurred:
+                    fallback_mode = True # Permamently switch to 1 for this job
+                current_batch_frames = []
+                current_batch_indices = []
+                
+            if i % 10 == 0:
                 LOGGER.info(f"Job {job_id}: Processed frame {i+1} / {total_frames}")
+
+        # Process remaining
+        if current_batch_frames and not _active_jobs[job_id]['stop_signal']:
+            process_batch(current_batch_frames, current_batch_indices)
 
         if not _active_jobs[job_id]['stop_signal']:
             _active_jobs[job_id]['status'] = 'done'
@@ -372,8 +489,8 @@ def _process_video_job(job_id, tmp_path, original_stem, unique_id, predictor, de
                 pass
 
 
-def _process_sbs_video_job(job_id, tmp_path, original_stem, unique_id, predictor, device, fps, use_fp16, opacity_threshold, stereo_offset, brightness_factor):
-    """Background worker for SBS 3D Movie generation (Audio extraction -> Render -> Stitch -> Video)."""
+def _process_sbs_video_job(job_id, tmp_path, original_stem, unique_id, predictor, device, fps, use_fp16, opacity_threshold, stereo_offset, brightness_factor, batch_size):
+    """Background worker for SBS 3D Movie generation with Batching and unique folders."""
     
     # Verify CUDA for rendering
     if device.type != 'cuda':
@@ -381,11 +498,16 @@ def _process_sbs_video_job(job_id, tmp_path, original_stem, unique_id, predictor
         _active_jobs[job_id]['error_msg'] = "SBS Rendering requires a CUDA GPU. CPU/MPS not supported for server-side rendering."
         return
     
-    LOGGER.info(f"Job {job_id} Config | Opacity Threshold: {opacity_threshold} | Stereo Offset: {stereo_offset} | Brightness: {brightness_factor}")
-
-    work_dir = OUTPUT_DIR / f"work_{unique_id}"
+    # DETERMINE FOLDER NAMES
+    job_prefix = get_next_job_prefix()
+    
+    # Folder for frames: output/001_video_name_frames/
+    work_dir = OUTPUT_DIR / f"{job_prefix}_{original_stem}_frames"
     work_dir.mkdir(exist_ok=True)
+    
     audio_path = work_dir / "audio.aac"
+    
+    LOGGER.info(f"Job {job_id} [{job_prefix}] | Batch: {batch_size} | Folder: {work_dir}")
     
     reader = None
     
@@ -394,51 +516,142 @@ def _process_sbs_video_job(job_id, tmp_path, original_stem, unique_id, predictor
         LOGGER.info(f"Job {job_id}: Extracting audio...")
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
         
-        # Check if video has audio track first could be useful, but let's try extraction
-        # -vn: no video, -acodec copy: copy audio stream
         audio_cmd = [
             ffmpeg_exe, "-y", "-i", str(tmp_path), 
             "-vn", "-acodec", "copy", str(audio_path)
         ]
         has_audio = False
         try:
-            # Capture output to suppress console spam, check return code
             subprocess.run(audio_cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if audio_path.exists() and audio_path.stat().st_size > 0:
                 has_audio = True
         except subprocess.CalledProcessError:
-            LOGGER.warning(f"Job {job_id}: No audio track found or extraction failed. Proceeding without audio.")
+            LOGGER.warning(f"Job {job_id}: No audio track found or extraction failed.")
 
-        # 2. Setup Processing Loop
+        # 2. Setup Processing
         try:
             reader = iio.get_reader(tmp_path)
             total_frames = reader.count_frames()
             _active_jobs[job_id]['total_frames'] = total_frames
         except Exception:
             _active_jobs[job_id]['total_frames'] = 0
-            # Re-open if count failed
             reader = iio.get_reader(tmp_path)
 
         # Initialize Renderer
-        # Target resolution: 1920x1080 per eye -> 3840x1080 total
         render_w, render_h = 1920, 1080
-        
-        # Robust Renderer Initialization for Windows
-        # NOTE: Using 'linearRGB' triggers the library to convert Linear->sRGB (Gamma correct), which effectively brightens the image.
-        # Using 'sRGB' actually passes the raw Linear data which looks dark.
         try:
             renderer = gsplat.GSplatRenderer(color_space="linearRGB")
         except Exception as e:
-            err_str = str(e)
-            if "DLL load failed" in err_str or "cl" in err_str or "compiler" in err_str.lower():
-                raise RuntimeError(
-                    "Missing 'gsplat' binaries. This usually means PyTorch/CUDA version mismatch or missing Visual Studio Build Tools. "
-                    "Try reinstalling with PyTorch CUDA 12.1 (cu121) to get compatible wheels."
-                )
+            if "cl" in str(e) or "DLL" in str(e):
+                raise RuntimeError("gsplat compilation failed. Install VS Build Tools.")
             raise e
+            
+        png_files = [] # Tuples of (index, path) to ensure sort order if needed, but append is sequential here
         
+        # Batch Containers
+        batch_frames = []
+        batch_indices = []
+
+        def process_sbs_batch(frames, indices):
+            try:
+                # Preprocess
+                clean_frames = []
+                for f in frames:
+                    if f.shape[2] > 3: clean_frames.append(f[:, :, :3])
+                    else: clean_frames.append(f)
+                
+                h, w = clean_frames[0].shape[:2]
+                f_px = io.convert_focallength(w, h, 30.0)
+                
+                # Predict Batch
+                gaussians_list = predict_batch(predictor, clean_frames, f_px, device, use_fp16=use_fp16)
+                
+                # Render Loop (Rendering is still sequential per gaussian, but prediction was batched)
+                # Note: We could technically batch render if gsplat supports it, but gsplat renderer
+                # usually takes one scene at a time. The speedup comes from the UNet prediction.
+                
+                for k, gaussians in enumerate(gaussians_list):
+                    idx = indices[k]
+                    
+                    # Halo Removal
+                    if opacity_threshold > 0.0:
+                        mask = gaussians.opacities[0] > opacity_threshold
+                        gaussians = Gaussians3D(
+                            mean_vectors=gaussians.mean_vectors[:, mask],
+                            singular_values=gaussians.singular_values[:, mask],
+                            quaternions=gaussians.quaternions[:, mask],
+                            colors=gaussians.colors[:, mask],
+                            opacities=gaussians.opacities[:, mask]
+                        )
+                    
+                    # Setup Cam
+                    scale_x = render_w / w
+                    # f_px_render = f_px * scale_x # Standard logic
+                    f_px_render = f_px * (render_w / w)
+
+                    intrinsics = torch.tensor([
+                        [f_px_render, 0, render_w / 2, 0],
+                        [0, f_px_render, render_h / 2, 0],
+                        [0, 0, 1, 0],
+                        [0, 0, 0, 1],
+                    ], device=device, dtype=torch.float32)
+
+                    ext_left = torch.eye(4, device=device)
+                    ext_left[0, 3] = stereo_offset
+                    
+                    ext_right = torch.eye(4, device=device)
+                    ext_right[0, 3] = -stereo_offset 
+                    
+                    # Render Left
+                    out_left = renderer(
+                        gaussians, 
+                        extrinsics=ext_left.unsqueeze(0), 
+                        intrinsics=intrinsics.unsqueeze(0),
+                        image_width=render_w, image_height=render_h
+                    )
+                    img_left_tensor = (out_left.color[0] * brightness_factor).clamp(0, 1)
+                    img_left = (img_left_tensor.permute(1, 2, 0) * 255).byte().cpu().numpy()
+
+                    # Render Right
+                    out_right = renderer(
+                        gaussians, 
+                        extrinsics=ext_right.unsqueeze(0), 
+                        intrinsics=intrinsics.unsqueeze(0),
+                        image_width=render_w, image_height=render_h
+                    )
+                    img_right_tensor = (out_right.color[0] * brightness_factor).clamp(0, 1)
+                    img_right = (img_right_tensor.permute(1, 2, 0) * 255).byte().cpu().numpy()
+
+                    # Stitch
+                    img_sbs = np.concatenate((img_left, img_right), axis=1)
+                    
+                    frame_name = f"frame_{idx:05d}.png"
+                    frame_path = work_dir / frame_name
+                    Image.fromarray(img_sbs).save(frame_path)
+                    png_files.append(frame_path)
+
+                    _active_jobs[job_id]['processed_frames'] = idx + 1
+                    
+                    del gaussians, out_left, out_right, img_left_tensor, img_right_tensor, img_left, img_right, img_sbs
+                
+                # Cleanup
+                torch.cuda.empty_cache()
+                gc.collect()
+
+            except RuntimeError as e:
+                # Fallback logic
+                if "out of memory" in str(e).lower() and len(frames) > 1:
+                    LOGGER.warning(f"OOM in SBS job with batch {len(frames)}. Switching to 1.")
+                    torch.cuda.empty_cache()
+                    for i in range(len(frames)):
+                        process_sbs_batch([frames[i]], [indices[i]])
+                    return True
+                else:
+                    raise e
+            return False
+
         # 3. Frame Loop
-        png_files = []
+        fallback_mode = False
         
         for i, frame in enumerate(reader):
             if _active_jobs[job_id]['stop_signal']:
@@ -446,162 +659,57 @@ def _process_sbs_video_job(job_id, tmp_path, original_stem, unique_id, predictor
                 _active_jobs[job_id]['status'] = 'stopped'
                 break
 
-            try:
-                if frame.shape[2] > 3: frame = frame[:, :, :3]
-                
-                # Predict
-                h, w = frame.shape[:2]
-                f_px = io.convert_focallength(w, h, 30.0)
-                gaussians = predict_image(predictor, frame, f_px, device, use_fp16=use_fp16)
-
-                # --- HALO REMOVAL LOGIC ---
-                if opacity_threshold > 0.0:
-                    # Filter out weak, semi-transparent splats that cause "ghosting" around hair/edges
-                    mask = gaussians.opacities[0] > opacity_threshold
-                    
-                    gaussians = Gaussians3D(
-                        mean_vectors=gaussians.mean_vectors[:, mask],
-                        singular_values=gaussians.singular_values[:, mask],
-                        quaternions=gaussians.quaternions[:, mask],
-                        colors=gaussians.colors[:, mask],
-                        opacities=gaussians.opacities[:, mask]
-                    )
-                # -------------------------
-
-                # -- Rendering Logic --
-                
-                # Prepare Intrinsics for 1920x1080 render
-                # We scale f_px to match the target render resolution relative to input
-                scale_x = render_w / w
-                scale_y = render_h / h
-                # Use the larger scale to cover FoV or average? Let's assume input fits 
-                # roughly into standard view.
-                # Actually, standard sharp camera logic:
-                f_px_render = f_px * (render_w / w) 
-
-                intrinsics = torch.tensor([
-                    [f_px_render, 0, render_w / 2, 0],
-                    [0, f_px_render, render_h / 2, 0],
-                    [0, 0, 1, 0],
-                    [0, 0, 0, 1],
-                ], device=device, dtype=torch.float32)
-
-                # Prepare Extrinsics (Stereo)
-                # Left Eye
-                ext_left = torch.eye(4, device=device)
-                ext_left[0, 3] = stereo_offset # Translate camera right = scene moves left
-                
-                # Right Eye
-                ext_right = torch.eye(4, device=device)
-                ext_right[0, 3] = -stereo_offset 
-                
-                # Render Left
-                out_left = renderer(
-                    gaussians, 
-                    extrinsics=ext_left.unsqueeze(0), 
-                    intrinsics=intrinsics.unsqueeze(0),
-                    image_width=render_w, image_height=render_h
-                )
-                # Apply brightness factor + clamp
-                img_left_tensor = (out_left.color[0] * brightness_factor).clamp(0, 1)
-                img_left = (img_left_tensor.permute(1, 2, 0) * 255).byte().cpu().numpy()
-
-                # Render Right
-                out_right = renderer(
-                    gaussians, 
-                    extrinsics=ext_right.unsqueeze(0), 
-                    intrinsics=intrinsics.unsqueeze(0),
-                    image_width=render_w, image_height=render_h
-                )
-                # Apply brightness factor + clamp
-                img_right_tensor = (out_right.color[0] * brightness_factor).clamp(0, 1)
-                img_right = (img_right_tensor.permute(1, 2, 0) * 255).byte().cpu().numpy()
-
-                # Stitch (Side-by-Side)
-                # Shape is (H, W, C). Concatenate along Width (axis 1)
-                img_sbs = np.concatenate((img_left, img_right), axis=1) # Result: 3840x1080
-                
-                # Save PNG
-                frame_name = f"frame_{i:05d}.png"
-                frame_path = work_dir / frame_name
-                Image.fromarray(img_sbs).save(frame_path)
-                png_files.append(frame_path)
-
-                # Cleanup VRAM immediately
-                del gaussians, out_left, out_right, img_left_tensor, img_right_tensor, img_left, img_right, img_sbs, intrinsics, ext_left, ext_right
-                
-                # Aggressive memory management for long renders
-                if i % 5 == 0:
-                    torch.cuda.empty_cache()
-                    gc.collect()
-
-            except Exception as e:
-                LOGGER.error(f"Error processing SBS frame {i}: {e}")
-                # If we catch the compile error inside the loop, re-raise to stop job
-                if "cl" in str(e) or "DLL" in str(e) or "compiler" in str(e):
-                     raise RuntimeError("gsplat compilation failed. Install VS Build Tools or compatible wheels.")
-                continue
-
-            _active_jobs[job_id]['processed_frames'] = i + 1
+            batch_frames.append(frame)
+            batch_indices.append(i)
+            
+            effective_bs = 1 if fallback_mode else batch_size
+            
+            if len(batch_frames) >= effective_bs:
+                oom = process_sbs_batch(batch_frames, batch_indices)
+                if oom: fallback_mode = True
+                batch_frames = []
+                batch_indices = []
+            
             if i % 10 == 0:
                  LOGGER.info(f"Job {job_id}: SBS Rendered frame {i+1}")
+        
+        # Remainder
+        if batch_frames:
+            # Process remainder even if stopped, to save progress
+            process_sbs_batch(batch_frames, batch_indices)
 
-        # 4. Final Assembly (FFmpeg)
-        if len(png_files) > 0:
-            output_filename = f"{original_stem}_{unique_id}_SBS.mp4"
+        # 4. Final Assembly (Allowed even if stopped)
+        if png_files:
+            # Save Video to root OUTPUT_DIR with prefix
+            output_filename = f"{job_prefix}_{original_stem}_SBS.mp4"
             output_path = OUTPUT_DIR / output_filename
+            LOGGER.info(f"Job {job_id}: Encoding SBS video to {output_filename}...")
             
-            LOGGER.info(f"Job {job_id}: Encoding SBS video...")
-            
-            # Input pattern for ffmpeg sequence
             input_pattern = str(work_dir / "frame_%05d.png")
+            cmd = [ffmpeg_exe, "-y", "-framerate", str(fps), "-i", input_pattern]
+            if has_audio: cmd.extend(["-i", str(audio_path)])
+            cmd.extend(["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-preset", "fast"])
             
-            # Construct FFmpeg command
-            # -framerate: set input fps
-            # -i pattern: input images
-            # -i audio: input audio (if exists)
-            # -c:v libx264: encoding
-            # -pix_fmt yuv420p: compatibility
-            # -shortest: finish when shortest stream ends (images usually)
-            
-            cmd = [
-                ffmpeg_exe, "-y",
-                "-framerate", str(fps),
-                "-i", input_pattern
-            ]
-            
-            if has_audio:
-                cmd.extend(["-i", str(audio_path)])
-            
-            cmd.extend([
-                "-c:v", "libx264",
-                "-pix_fmt", "yuv420p",
-                "-crf", "18", # High quality
-                "-preset", "fast"
-            ])
-            
-            if has_audio:
-                # If we stopped early, -shortest handles trimming audio length
-                cmd.append("-shortest")
+            # If audio exists, shortest cuts it to video length (useful if we stopped early)
+            if has_audio: cmd.append("-shortest")
             
             cmd.append(str(output_path))
             
             try:
                 subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-                
-                # Register the final file in the job so frontend sees it
                 _active_jobs[job_id]['files'].append(output_filename)
                 
-                if not _active_jobs[job_id]['stop_signal']:
-                    _active_jobs[job_id]['status'] = 'done'
-                
+                # If we stopped, we still finished encoding the partial video.
+                # Do we mark job as 'done' so the UI shows success? 
+                # Yes, because the file is ready to view.
+                _active_jobs[job_id]['status'] = 'done'
             except subprocess.CalledProcessError as e:
                 LOGGER.error(f"FFmpeg encoding failed: {e.stderr.decode()}")
                 _active_jobs[job_id]['status'] = 'error'
                 _active_jobs[job_id]['error_msg'] = "Video encoding failed."
-        else:
+        elif not _active_jobs[job_id]['stop_signal']:
              _active_jobs[job_id]['status'] = 'error'
-             _active_jobs[job_id]['error_msg'] = "No frames were processed successfully."
+             _active_jobs[job_id]['error_msg'] = "No frames were processed."
 
     except Exception as e:
         LOGGER.exception(f"Job {job_id} failed")
@@ -609,17 +717,17 @@ def _process_sbs_video_job(job_id, tmp_path, original_stem, unique_id, predictor
         _active_jobs[job_id]['error_msg'] = str(e)
     finally:
         if reader:
-            try: reader.close()
-            except: pass
-        if tmp_path.exists():
-            try: tmp_path.unlink()
-            except: pass
-        # Clean up work directory (PNGs and Audio)
-        if work_dir.exists():
             try:
-                shutil.rmtree(work_dir)
-            except Exception as e:
-                LOGGER.warning(f"Failed to cleanup temp dir {work_dir}: {e}")
+                reader.close()
+            except:
+                pass
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except:
+                pass
+        # NOTE: rmtree removed per user request to keep frame files
+        # if work_dir.exists(): try: shutil.rmtree(work_dir) except: pass
 
 
 @app.route("/generate_video", methods=["POST"])
@@ -632,19 +740,22 @@ def generate_video():
     if file.filename == "":
         return jsonify({"error": "No file selected"}), 400
 
-    # Get Quality/FP16 Setting for video
+    # Settings
     quality = request.form.get('quality', 'balanced')
     use_fp16 = (quality == 'fast')
-    
-    # Get Mode: 'ply_seq' (default) or 'sbs_movie'
     output_mode = request.form.get('output_mode', 'ply_seq')
-    
-    # Get New Settings (Defaults applied if missing)
     opacity_threshold = float(request.form.get('opacity_threshold', 0.0))
     stereo_offset = float(request.form.get('stereo_offset', 0.03))
     brightness_factor = float(request.form.get('brightness_factor', 1.0))
+    
+    # BATCH SIZE parsing
+    try:
+        batch_size = int(request.form.get('batch_size', 1))
+        if batch_size < 1: batch_size = 1
+    except:
+        batch_size = 1
 
-    LOGGER.info(f"Starting video generation | Quality: {quality} | Mode: {output_mode}")
+    LOGGER.info(f"Starting video generation | Mode: {output_mode} | Batch Size: {batch_size} | Quality: {quality}")
 
     allowed_extensions = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
     ext = Path(file.filename).suffix.lower()
@@ -655,12 +766,10 @@ def generate_video():
         unique_id = str(uuid.uuid4())[:8]
         original_stem = Path(file.filename).stem
         
-        # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
             file.save(tmp.name)
             tmp_path = Path(tmp.name)
 
-        # Get metadata
         try:
             reader = iio.get_reader(tmp_path)
             meta = reader.get_meta_data()
@@ -669,7 +778,6 @@ def generate_video():
         except Exception:
             fps = 30.0
         
-        # Prepare job
         job_id = str(uuid.uuid4())
         _active_jobs[job_id] = {
             "status": "running",
@@ -682,19 +790,17 @@ def generate_video():
             "mode": output_mode
         }
 
-        # Get model (ensure loaded)
         predictor, device = get_predictor()
         
-        # Select worker based on mode
         if output_mode == 'sbs_movie':
             thread = threading.Thread(
                 target=_process_sbs_video_job,
-                args=(job_id, tmp_path, original_stem, unique_id, predictor, device, fps, use_fp16, opacity_threshold, stereo_offset, brightness_factor)
+                args=(job_id, tmp_path, original_stem, unique_id, predictor, device, fps, use_fp16, opacity_threshold, stereo_offset, brightness_factor, batch_size)
             )
         else:
             thread = threading.Thread(
                 target=_process_video_job,
-                args=(job_id, tmp_path, original_stem, unique_id, predictor, device, fps, use_fp16)
+                args=(job_id, tmp_path, original_stem, unique_id, predictor, device, fps, use_fp16, batch_size)
             )
 
         thread.start()
@@ -824,7 +930,7 @@ def view_local():
         return str(e), 500
 
 
-@app.route("/download/<filename>")
+@app.route("/download/<path:filename>")
 def download(filename: str):
     """Download a generated file."""
     file_path = OUTPUT_DIR / filename
@@ -839,12 +945,12 @@ def download(filename: str):
     return send_file(
         file_path,
         as_attachment=True,
-        download_name=filename,
+        download_name=Path(filename).name,
         mimetype=mime,
     )
 
 
-@app.route("/ply/<filename>")
+@app.route("/ply/<path:filename>")
 def serve_ply(filename: str):
     """Serve a PLY file for the viewer."""
     file_path = OUTPUT_DIR / filename

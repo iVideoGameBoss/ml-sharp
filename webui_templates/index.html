@@ -297,8 +297,21 @@
                         <video id="preview-video" controls style="display:none;"></video>
                         <div class="preview-info" id="preview-info"></div>
                         
-                        <!-- SBS Toggle for Video -->
+                        <!-- Video Options -->
                         <div id="video-options" style="display:none; margin-top:10px;">
+                            
+                            <!-- BATCH SIZE SELECTOR -->
+                            <div class="input-group" style="margin-bottom: 12px;">
+                                <label>Processing Speed (Batch Size):</label>
+                                <select id="batch-size" class="quality-select">
+                                    <option value="1" selected>1 Frame (Safe/Default) - Works on 8GB VRAM</option>
+                                    <option value="2">2 Frames - Faster (Requires ~12GB VRAM)</option>
+                                    <option value="4">4 Frames - Very Fast (Requires ~16GB+ VRAM)</option>
+                                    <option value="8">8 Frames - Extreme (Requires 24GB+ 3090/4090/5090)</option>
+                                </select>
+                                <small class="hint">Higher batch sizes use more GPU memory. If it crashes, it will auto-revert to 1.</small>
+                            </div>
+
                             <div class="checkbox-container">
                                 <input type="checkbox" id="sbs-toggle">
                                 <label for="sbs-toggle" style="cursor:pointer; color: #00d4ff;">Generate SBS 3D Movie (Requires CUDA)</label>
@@ -572,6 +585,9 @@
         
         // Quality Selector
         const qualitySelector = document.getElementById('quality-selector');
+        
+        // Batch Size Selector
+        const batchSizeSelector = document.getElementById('batch-size');
 
         // Video Options
         const videoOptions = document.getElementById('video-options');
@@ -843,6 +859,9 @@
                 const formData = new FormData();
                 formData.append('video', selectedFile);
                 formData.append('quality', qualitySelector.value); // Pass quality setting
+                
+                // Set Batch Size
+                formData.append('batch_size', batchSizeSelector.value);
                 
                 // Set Mode: SBS Movie vs PLY Sequence
                 if (sbsToggle.checked) {
