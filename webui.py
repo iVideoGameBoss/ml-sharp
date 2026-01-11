@@ -730,6 +730,157 @@ def _process_sbs_video_job(job_id, tmp_path, original_stem, unique_id, predictor
         # if work_dir.exists(): try: shutil.rmtree(work_dir) except: pass
 
 
+@app.route("/preview_sbs_frame", methods=["POST"])
+def preview_sbs_frame():
+    """Generate a single SBS preview frame from a video for testing settings."""
+    if "video" not in request.files:
+        return jsonify({"error": "No video file provided"}), 400
+
+    file = request.files["video"]
+    if file.filename == "":
+        return jsonify({"error": "No file selected"}), 400
+
+    # Parse parameters
+    try:
+        frame_number = int(request.form.get('frame_number', 0))
+    except ValueError:
+        frame_number = 0
+    
+    quality = request.form.get('quality', 'balanced')
+    use_fp16 = (quality == 'fast')
+    opacity_threshold = float(request.form.get('opacity_threshold', 0.0))
+    stereo_offset = float(request.form.get('stereo_offset', 0.015))
+    brightness_factor = float(request.form.get('brightness_factor', 1.0))
+
+    LOGGER.info(f"SBS Preview: frame={frame_number}, opacity={opacity_threshold}, offset={stereo_offset}, brightness={brightness_factor}")
+
+    allowed_extensions = {".mp4", ".mov", ".avi", ".mkv", ".webm"}
+    ext = Path(file.filename).suffix.lower()
+    if ext not in allowed_extensions:
+        return jsonify({"error": f"Unsupported file type: {ext}"}), 400
+
+    tmp_path = None
+    try:
+        # Save video to temp file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            file.save(tmp.name)
+            tmp_path = Path(tmp.name)
+
+        # Get predictor and device
+        predictor, device = get_predictor()
+        
+        # Verify CUDA for rendering
+        if device.type != 'cuda':
+            return jsonify({"error": "SBS Preview requires a CUDA GPU."}), 400
+
+        # Open video and extract frame
+        reader = iio.get_reader(tmp_path)
+        try:
+            frame = reader.get_data(frame_number)
+        except IndexError:
+            reader.close()
+            return jsonify({"error": f"Frame {frame_number} out of range"}), 400
+        reader.close()
+
+        # Ensure 3 channels
+        if frame.shape[2] > 3:
+            frame = frame[:, :, :3]
+
+        h, w = frame.shape[:2]
+        f_px = io.convert_focallength(w, h, 30.0)
+
+        # Predict Gaussians
+        gaussians = predict_image(predictor, frame, f_px, device, use_fp16=use_fp16)
+
+        # Apply halo removal
+        if opacity_threshold > 0.0:
+            mask = gaussians.opacities[0] > opacity_threshold
+            gaussians = Gaussians3D(
+                mean_vectors=gaussians.mean_vectors[:, mask],
+                singular_values=gaussians.singular_values[:, mask],
+                quaternions=gaussians.quaternions[:, mask],
+                colors=gaussians.colors[:, mask],
+                opacities=gaussians.opacities[:, mask]
+            )
+
+        # Setup rendering
+        render_w, render_h = 1920, 1080
+        renderer = gsplat.GSplatRenderer(color_space="linearRGB")
+
+        f_px_render = f_px * (render_w / w)
+        intrinsics = torch.tensor([
+            [f_px_render, 0, render_w / 2, 0],
+            [0, f_px_render, render_h / 2, 0],
+            [0, 0, 1, 0],
+            [0, 0, 0, 1],
+        ], device=device, dtype=torch.float32)
+
+        ext_left = torch.eye(4, device=device)
+        ext_left[0, 3] = stereo_offset
+
+        ext_right = torch.eye(4, device=device)
+        ext_right[0, 3] = -stereo_offset
+
+        # Render left eye
+        out_left = renderer(
+            gaussians,
+            extrinsics=ext_left.unsqueeze(0),
+            intrinsics=intrinsics.unsqueeze(0),
+            image_width=render_w, image_height=render_h
+        )
+        img_left_tensor = (out_left.color[0] * brightness_factor).clamp(0, 1)
+        img_left = (img_left_tensor.permute(1, 2, 0) * 255).byte().cpu().numpy()
+
+        # Render right eye
+        out_right = renderer(
+            gaussians,
+            extrinsics=ext_right.unsqueeze(0),
+            intrinsics=intrinsics.unsqueeze(0),
+            image_width=render_w, image_height=render_h
+        )
+        img_right_tensor = (out_right.color[0] * brightness_factor).clamp(0, 1)
+        img_right = (img_right_tensor.permute(1, 2, 0) * 255).byte().cpu().numpy()
+
+        # Stitch side-by-side (3840x1080)
+        img_sbs = np.concatenate((img_left, img_right), axis=1)
+
+        # Cleanup GPU memory
+        del gaussians, out_left, out_right, img_left_tensor, img_right_tensor
+        torch.cuda.empty_cache()
+        gc.collect()
+
+        # Save to temp file and return
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as out_tmp:
+            Image.fromarray(img_sbs).save(out_tmp.name, "JPEG", quality=90)
+            out_tmp_path = Path(out_tmp.name)
+
+        response = send_file(
+            out_tmp_path,
+            mimetype='image/jpeg',
+            as_attachment=False
+        )
+        
+        # Schedule cleanup after response (Flask handles this)
+        @response.call_on_close
+        def cleanup():
+            try:
+                out_tmp_path.unlink()
+            except:
+                pass
+
+        return response
+
+    except Exception as e:
+        LOGGER.exception("Error generating SBS preview")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if tmp_path and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except:
+                pass
+
+
 @app.route("/generate_video", methods=["POST"])
 def generate_video():
     """Start async video generation."""
@@ -745,7 +896,7 @@ def generate_video():
     use_fp16 = (quality == 'fast')
     output_mode = request.form.get('output_mode', 'ply_seq')
     opacity_threshold = float(request.form.get('opacity_threshold', 0.0))
-    stereo_offset = float(request.form.get('stereo_offset', 0.03))
+    stereo_offset = float(request.form.get('stereo_offset', 0.015))
     brightness_factor = float(request.form.get('brightness_factor', 1.0))
     
     # BATCH SIZE parsing
